@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 #coding=utf-8
 """
-tfrecord for <<Deep Interest Network for Click-Through Rate Prediction>> and <<Entire Space Multi-Task Model: An Effective Approach for Estimating Post-Click Conversion Rate>>
+tfrecord for <<Deep Interest Network for Click-Through Rate Prediction>>
+and <<Entire Space Multi-Task Model: An Effective Approach for Estimating Post-Click Conversion Rate>>
 
 by lambdaji
 """

@@ -1,12 +1,13 @@
 # coding=utf8
 """
+特征工程代码，参考PaddlePaddle官方
 This code referenced from [here](https://github.com/PaddlePaddle/models/blob/develop/deep_fm/preprocess.py)
 -For numerical features,normalzied to continous values.
 -For categorical features, removed long-tailed data appearing less than 200 times.
 
 TODO：
 #1 连续特征 离散化
-#2 Nagetive down sampling
+#2 Nagetive down sampling 负采样
 """
 import os
 import sys
@@ -17,17 +18,20 @@ import argparse
 from multiprocessing import Pool as ThreadPool
 
 # There are 13 integer features and 26 categorical features
+# 这个数据集有13个整数特征列和26个类别型特征列
 continous_features = range(1, 14)
 categorial_features = range(14, 40)
 
 # Clip integer features. The clip point for each integer feature
 # is derived from the 95% quantile of the total values in each feature
+# 下面这些数是算出来的，可以用pandas里面的算法，得到每个数值型特征列的95%分位数
 continous_clip = [20, 600, 100, 50, 64000, 500, 100, 50, 500, 10, 10, 10, 50]
 
 
 class CategoryDictGenerator:
     """
     Generate dictionary for each of the categorical features
+    为类别型的特征生成字典
     """
 
     def __init__(self, num_feature):
@@ -39,17 +43,20 @@ class CategoryDictGenerator:
     def build(self, datafile, categorial_features, cutoff=0):
         with open(datafile, 'r') as f:
             for line in f:
+                # 读取数据，这里设置了分隔符和换行符
                 features = line.rstrip('\n').split('\t')
                 for i in range(0, self.num_feature):
+                    #如果类别型特征列非空，写入字典
                     if features[categorial_features[i]] != '':
                         self.dicts[i][features[categorial_features[i]]] += 1
+        # 这里似乎是对词汇的长度进行了截断？
         for i in range(0, self.num_feature):
             self.dicts[i] = filter(lambda x: x[1] >= cutoff, self.dicts[i].items())
             self.dicts[i] = sorted(self.dicts[i], key=lambda x: (-x[1], x[0]))
             vocabs, _ = list(zip(*self.dicts[i]))
             self.dicts[i] = dict(zip(vocabs, range(1, len(vocabs) + 1)))
             self.dicts[i]['<unk>'] = 0
-
+    # 以键值对的形式存储
     def gen(self, idx, key):
         if key not in self.dicts[idx]:
             res = self.dicts[idx]['<unk>']
@@ -64,6 +71,7 @@ class CategoryDictGenerator:
 class ContinuousFeatureGenerator:
     """
     Normalize the integer features to [0, 1] by min-max normalization
+    对数值型的特征进行幅度缩放
     """
 
     def __init__(self, num_feature):
@@ -74,11 +82,17 @@ class ContinuousFeatureGenerator:
     def build(self, datafile, continous_features):
         with open(datafile, 'r') as f:
             for line in f:
+                # 输入换行符和分隔符
                 features = line.rstrip('\n').split('\t')
                 for i in range(0, self.num_feature):
                     val = features[continous_features[i]]
                     if val != '':
                         val = int(val)
+                        # 连续值离散化，如果大于95%分位数，进行截断
+                        """
+                        这里这样处理的目的是排除一些明显超出正常范围的特征值对结果的影响
+                        CTR这个真实场景下，有可能出现类似巨额资金流入等等异常，需要剔除其影响
+                        """
                         if val > continous_clip[i]:
                             val = continous_clip[i]
                         self.min[i] = min(self.min[i], val)
@@ -100,6 +114,8 @@ def preprocess(datadir, outdir):
     continous features are combined into one vecotr with dimension 13.
     Each of the 26 categorical features are one-hot encoded and all the one-hot
     vectors are combined into one sparse binary vector.
+    全部的13个连续整数的数值型特征被映射到13维的向量上
+    26个类别型的特征都进行独热编码并映射为稀疏向量
     """
     # pool = ThreadPool(FLAGS.threads) # Sets the pool size
     dists = ContinuousFeatureGenerator(len(continous_features))
@@ -128,6 +144,7 @@ def preprocess(datadir, outdir):
 
     # 90% of the data are used for training, and 10% of the data are used
     # for validation.
+    # 90%的数据训练，10%的数据验证
     with open(FLAGS.output_dir + 'tr.libsvm', 'w') as out_train:
         with open(FLAGS.output_dir + 'va.libsvm', 'w') as out_valid:
             with open(FLAGS.input_dir + 'train.txt', 'r') as f:
