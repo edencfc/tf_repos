@@ -105,8 +105,11 @@ def model_fn(features, labels, mode, params):
     l2_reg = params["l2_reg"]
     learning_rate = params["learning_rate"]
     #optimizer = params["optimizer"]
-    layers = map(int, params["attention_layers"].split(','))
-    dropout = map(float, params["dropout"].split(','))
+    """
+    升级代码版本至Python 3.X
+    """
+    layers = list(map(int, params["attention_layers"].split(',')))
+    dropout = list(map(float, params["dropout"].split(',')))
 
     #------bulid weights------
     Global_Bias = tf.get_variable(name='bias', shape=[1], initializer=tf.constant_initializer(0.0))
@@ -148,7 +151,9 @@ def model_fn(features, labels, mode, params):
             weights_regularizer=tf.contrib.layers.l2_regularizer(l2_reg), scope='attention_out')# (None * (F*(F-1))) * 1
 
         #aij_reshape = tf.reshape(aij, shape=[-1, num_interactions, 1])							# None * (F*(F-1)) * 1
-        aij_softmax = tf.nn.softmax(tf.reshape(aij, shape=[-1, num_interactions, 1]), dim=1, name='attention_soft')
+        # 升级代码至高版本的Tensorflow
+        aij_softmax = tf.nn.softmax(tf.reshape(aij, shape=[-1, int(num_interactions), 1]), axis=1, name='attention_soft')
+        # aij_softmax = tf.nn.softmax(tf.reshape(aij, shape=[-1, num_interactions, 1]), dim=1, name='attention_soft')
         if mode == tf.estimator.ModeKeys.TRAIN:
             aij_softmax = tf.nn.dropout(aij_softmax, keep_prob=dropout[0])
 
