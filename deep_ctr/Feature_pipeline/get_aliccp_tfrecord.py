@@ -5,6 +5,7 @@ tfrecord for <<Deep Interest Network for Click-Through Rate Prediction>>
 and <<Entire Space Multi-Task Model: An Effective Approach for Estimating Post-Click Conversion Rate>>
 
 by lambdaji
+这个地方是另一个数据集，淘宝的点击率数据
 """
 from __future__ import absolute_import
 from __future__ import division
@@ -22,7 +23,7 @@ from multiprocessing import Pool as ThreadPool
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 LOG = tf.logging
-
+# 输入全局变量
 tf.app.flags.DEFINE_string("input_dir", "./", "input dir")
 tf.app.flags.DEFINE_string("output_dir", "./", "output dir")
 tf.app.flags.DEFINE_integer("threads", 16, "threads num")
@@ -36,6 +37,7 @@ UMH_Fileds      = {'109_14':('u_cat','12'),'110_14':('u_shop','13'),'127_14':('u
 Ad_Fileds       = {'206':('a_cat','16'),'207':('a_shop','17'),'210':('a_int','18'),'216':('a_brand','19')}                  #ad feature for DIN
 
 #40362692,0,0,216:9342395:1.0 301:9351665:1.0 205:7702673:1.0 206:8317829:1.0 207:8967741:1.0 508:9356012:2.30259 210:9059239:1.0 210:9042796:1.0 210:9076972:1.0 210:9103884:1.0 210:9063064:1.0 127_14:3529789:2.3979 127_14:3806412:2.70805
+# 以tfrecords的形式保存特征，提高数据读取效率
 def gen_tfrecords(in_file):
     basename = os.path.basename(in_file) + ".tfrecord"
     out_file = os.path.join(FLAGS.output_dir, basename)
@@ -63,9 +65,9 @@ def gen_tfrecords(in_file):
             feat_ids = np.array([])
             #feat_vals = np.array([])
             for f, def_id in Common_Fileds.iteritems():
-                if f in ffv[:,0]:
-                    mask = np.array(f == ffv[:,0])
-                    feat_ids = np.append(feat_ids, ffv[mask,1])
+                if f in ffv[:, 0]:
+                    mask = np.array(f == ffv[:, 0])
+                    feat_ids = np.append(feat_ids, ffv[mask, 1])
                     #np.append(feat_vals,ffv[mask,2].astype(np.float))
                 else:
                     feat_ids = np.append(feat_ids, def_id)
@@ -75,10 +77,10 @@ def gen_tfrecords(in_file):
 
             #3 特殊字段单独处理
             for f, (fname, def_id) in UMH_Fileds.iteritems():
-                if f in ffv[:,0]:
-                    mask = np.array(f == ffv[:,0])
-                    feat_ids = ffv[mask,1]
-                    feat_vals= ffv[mask,2]
+                if f in ffv[:, 0]:
+                    mask = np.array(f == ffv[:, 0])
+                    feat_ids = ffv[mask, 1]
+                    feat_vals = ffv[mask, 2]
                 else:
                     feat_ids = np.array([def_id])
                     feat_vals = np.array([1.0])
@@ -86,15 +88,15 @@ def gen_tfrecords(in_file):
                                 fname+"vals": tf.train.Feature(float_list=tf.train.FloatList(value=feat_vals.astype(np.float)))})
 
             for f, (fname, def_id) in Ad_Fileds.iteritems():
-                if f in ffv[:,0]:
-                    mask = np.array(f == ffv[:,0])
-                    feat_ids = ffv[mask,1]
+                if f in ffv[:, 0]:
+                    mask = np.array(f == ffv[:, 0])
+                    feat_ids = ffv[mask, 1]
                 else:
                     feat_ids = np.array([def_id])
                 feature.update({fname+"ids": tf.train.Feature(int64_list=tf.train.Int64List(value=feat_ids.astype(np.int)))})
 
             # serialized to Example
-            example = tf.train.Example(features = tf.train.Features(feature = feature))
+            example = tf.train.Example(features=tf.train.Features(feature=feature))
             serialized = example.SerializeToString()
             tfrecord_out.write(serialized)
             #num_lines += 1
