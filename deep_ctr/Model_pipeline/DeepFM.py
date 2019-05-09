@@ -31,6 +31,9 @@ import random
 import tensorflow as tf
 
 #################### CMD Arguments ####################
+"""
+命令行参数设置，根据数据集的情况输入特征的数量、特征主题域的个数、文件目录、超参数的选择等等
+"""
 FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_integer("dist_mode", 0, "distribuion mode {0-loacal, 1-single_dist, 2-multi_dist}")
 tf.app.flags.DEFINE_string("ps_hosts", '', "Comma-separated list of hostname:port pairs")
@@ -60,17 +63,24 @@ tf.app.flags.DEFINE_string("task_type", 'train', "task type {train, infer, eval,
 tf.app.flags.DEFINE_boolean("clear_existing_model", False, "clear existing model or not")
 
 #1 1:0.5 2:0.03519 3:1 4:0.02567 7:0.03708 8:0.01705 9:0.06296 10:0.18185 11:0.02497 12:1 14:0.02565 15:0.03267 17:0.0247 18:0.03158 20:1 22:1 23:0.13169 24:0.02933 27:0.18159 31:0.0177 34:0.02888 38:1 51:1 63:1 132:1 164:1 236:1
+"""
+这里用到了tensorflow的high level API，因此要先改写input_fn
+"""
 def input_fn(filenames, batch_size=32, num_epochs=1, perform_shuffle=False):
     print('Parsing', filenames)
     def decode_libsvm(line):
         #columns = tf.decode_csv(value, record_defaults=CSV_COLUMN_DEFAULTS)
         #features = dict(zip(CSV_COLUMNS, columns))
         #labels = features.pop(LABEL_COLUMN)
+        # 特征列
         columns = tf.string_split([line], ' ')
+        # 标签
         labels = tf.string_to_number(columns.values[0], out_type=tf.float32)
+        # 分隔符
         splits = tf.string_split(columns.values[1:], ':')
-        id_vals = tf.reshape(splits.values,splits.dense_shape)
-        feat_ids, feat_vals = tf.split(id_vals,num_or_size_splits=2,axis=1)
+        id_vals = tf.reshape(splits.values, splits.dense_shape)
+        feat_ids, feat_vals = tf.split(id_vals, num_or_size_splits=2, axis=1)
+        # 做一下数据类型转换
         feat_ids = tf.string_to_number(feat_ids, out_type=tf.int32)
         feat_vals = tf.string_to_number(feat_vals, out_type=tf.float32)
         #feat_ids = tf.reshape(feat_ids,shape=[-1,FLAGS.field_size])
@@ -78,12 +88,15 @@ def input_fn(filenames, batch_size=32, num_epochs=1, perform_shuffle=False):
         #    feat_ids.append(tf.string_to_number(splits.values[2*i], out_type=tf.int32))
         #    feat_vals.append(tf.string_to_number(splits.values[2*i+1]))
         #return tf.reshape(feat_ids,shape=[-1,field_size]), tf.reshape(feat_vals,shape=[-1,field_size]), labels
+        # 返回的是一个元组
         return {"feat_ids": feat_ids, "feat_vals": feat_vals}, labels
 
     # Extract lines from input files using the Dataset API, can pass one filename or filename list
+    # 从tensorflow的Dataset API批量导入数据
     dataset = tf.data.TextLineDataset(filenames).map(decode_libsvm, num_parallel_calls=10).prefetch(500000)    # multi-thread pre-process then prefetch
 
     # Randomizes input using a window of 256 elements (read into memory)
+    # 乱序
     if perform_shuffle:
         dataset = dataset.shuffle(buffer_size=256)
 
@@ -92,17 +105,21 @@ def input_fn(filenames, batch_size=32, num_epochs=1, perform_shuffle=False):
     dataset = dataset.batch(batch_size) # Batch size to use
 
     #return dataset.make_one_shot_iterator()
+    # 根据epochs的设置迭代周期
     iterator = dataset.make_one_shot_iterator()
     batch_features, batch_labels = iterator.get_next()
     #return tf.reshape(batch_ids,shape=[-1,field_size]), tf.reshape(batch_vals,shape=[-1,field_size]), batch_labels
     return batch_features, batch_labels
-
+# 定义high level API中的model_fn
 def model_fn(features, labels, mode, params):
     """Bulid Model function f(x) for Estimator."""
+    """构建Estimator"""
     #------hyperparameters----
+    #------超参数设置----
     field_size = params["field_size"]
     feature_size = params["feature_size"]
     embedding_size = params["embedding_size"]
+    # L2正则化
     l2_reg = params["l2_reg"]
     learning_rate = params["learning_rate"]
     #batch_norm_decay = params["batch_norm_decay"]
@@ -116,17 +133,20 @@ def model_fn(features, labels, mode, params):
     # layers  = map(int, params["deep_layers"].split(','))
     # dropout = map(float, params["dropout"].split(','))
     #------bulid weights------
+    #------初始化权重------
     FM_B = tf.get_variable(name='fm_bias', shape=[1], initializer=tf.constant_initializer(0.0))
     FM_W = tf.get_variable(name='fm_w', shape=[feature_size], initializer=tf.glorot_normal_initializer())
     FM_V = tf.get_variable(name='fm_v', shape=[feature_size, embedding_size], initializer=tf.glorot_normal_initializer())
 
     #------build feaure-------
-    feat_ids  = features['feat_ids']
-    feat_ids = tf.reshape(feat_ids,shape=[-1,field_size])
+    #------输入特征-------
+    feat_ids = features['feat_ids']
+    feat_ids = tf.reshape(feat_ids, shape=[-1,field_size])
     feat_vals = features['feat_vals']
     feat_vals = tf.reshape(feat_vals,shape=[-1,field_size])
 
     #------build f(x)------
+    #------搭建网络结构------
     with tf.variable_scope("First-order"):
         feat_wgts = tf.nn.embedding_lookup(FM_W, feat_ids)              # None * F * 1
         y_w = tf.reduce_sum(tf.multiply(feat_wgts, feat_vals),1)
@@ -135,10 +155,11 @@ def model_fn(features, labels, mode, params):
         embeddings = tf.nn.embedding_lookup(FM_V, feat_ids)             # None * F * K
         feat_vals = tf.reshape(feat_vals, shape=[-1, field_size, 1])
         embeddings = tf.multiply(embeddings, feat_vals)                 #vij*xi
-        sum_square = tf.square(tf.reduce_sum(embeddings,1))
-        square_sum = tf.reduce_sum(tf.square(embeddings),1)
-        y_v = 0.5*tf.reduce_sum(tf.subtract(sum_square, square_sum),1)	# None * 1
-
+        sum_square = tf.square(tf.reduce_sum(embeddings, 1))
+        square_sum = tf.reduce_sum(tf.square(embeddings), 1)
+        # 计算FM层的二阶特征
+        y_v = 0.5*tf.reduce_sum(tf.subtract(sum_square, square_sum), 1) # None * 1
+    # 构建Deep层
     with tf.variable_scope("Deep-part"):
         if FLAGS.batch_norm:
             #normalizer_fn = tf.contrib.layers.batch_norm
@@ -152,24 +173,29 @@ def model_fn(features, labels, mode, params):
         else:
             normalizer_fn = None
             normalizer_params = None
-
-        deep_inputs = tf.reshape(embeddings,shape=[-1,field_size*embedding_size]) # None * (F*K)
+        # deep层的输入
+        deep_inputs = tf.reshape(embeddings, shape=[-1, field_size*embedding_size]) # None * (F*K)
         for i in range(len(layers)):
             #if FLAGS.batch_norm:
             #    deep_inputs = batch_norm_layer(deep_inputs, train_phase=train_phase, scope_bn='bn_%d' %i)
                 #normalizer_params.update({'scope': 'bn_%d' %i})
+            # 全连接层，用到L2正则化防止过拟合
             deep_inputs = tf.contrib.layers.fully_connected(inputs=deep_inputs, num_outputs=layers[i], \
                 #normalizer_fn=normalizer_fn, normalizer_params=normalizer_params, \
                 weights_regularizer=tf.contrib.layers.l2_regularizer(l2_reg), scope='mlp%d' % i)
             if FLAGS.batch_norm:
+                # 是否进行batch normalization
                 deep_inputs = batch_norm_layer(deep_inputs, train_phase=train_phase, scope_bn='bn_%d' %i)   #放在RELU之后 https://github.com/ducha-aiki/caffenet-benchmark/blob/master/batchnorm.md#bn----before-or-after-relu
             if mode == tf.estimator.ModeKeys.TRAIN:
+                # 训练阶段。随机失活
                 deep_inputs = tf.nn.dropout(deep_inputs, keep_prob=dropout[i])                              #Apply Dropout after all BN layers and set dropout=0.8(drop_ratio=0.2)
                 #deep_inputs = tf.layers.dropout(inputs=deep_inputs, rate=dropout[i], training=mode == tf.estimator.ModeKeys.TRAIN)
 
-        y_deep = tf.contrib.layers.fully_connected(inputs=deep_inputs, num_outputs=1, activation_fn=tf.identity, \
-                weights_regularizer=tf.contrib.layers.l2_regularizer(l2_reg), scope='deep_out')
-        y_d = tf.reshape(y_deep,shape=[-1])
+        y_deep = tf.contrib.layers.fully_connected(inputs=deep_inputs, num_outputs=1,
+                                                   activation_fn=tf.identity,
+                                                   weights_regularizer=tf.contrib.layers.l2_regularizer(l2_reg),
+                                                   scope='deep_out')
+        y_d = tf.reshape(y_deep, shape=[-1])
         #sig_wgts = tf.get_variable(name='sigmoid_weights', shape=[layers[-1]], initializer=tf.glorot_normal_initializer())
         #sig_bias = tf.get_variable(name='sigmoid_bias', shape=[1], initializer=tf.constant_initializer(0.0))
         #deep_out = tf.nn.xw_plus_b(deep_inputs,sig_wgts,sig_bias,name='deep_out')
@@ -179,8 +205,8 @@ def model_fn(features, labels, mode, params):
         y_bias = FM_B * tf.ones_like(y_d, dtype=tf.float32)      # None * 1
         y = y_bias + y_w + y_v + y_d
         pred = tf.sigmoid(y)
-
-    predictions={"prob": pred}
+    # 定义预测阶段
+    predictions = {"prob": pred}
     export_outputs = {tf.saved_model.signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY: tf.estimator.export.PredictOutput(predictions)}
     # Provide an estimator spec for `ModeKeys.PREDICT`
     if mode == tf.estimator.ModeKeys.PREDICT:
@@ -190,11 +216,13 @@ def model_fn(features, labels, mode, params):
                 export_outputs=export_outputs)
 
     #------bulid loss------
+    #------计算损失函数------
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=y, labels=labels)) + \
         l2_reg * tf.nn.l2_loss(FM_W) + \
         l2_reg * tf.nn.l2_loss(FM_V)
 
     # Provide an estimator spec for `ModeKeys.EVAL`
+    # 定义评估阶段
     eval_metric_ops = {
         "auc": tf.metrics.auc(labels, pred)
     }
@@ -206,6 +234,7 @@ def model_fn(features, labels, mode, params):
                 eval_metric_ops=eval_metric_ops)
 
     #------bulid optimizer------
+    #--------定义优化器---------
     if FLAGS.optimizer == 'Adam':
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, beta1=0.9, beta2=0.999, epsilon=1e-8)
     elif FLAGS.optimizer == 'Adagrad':
@@ -214,10 +243,11 @@ def model_fn(features, labels, mode, params):
         optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.95)
     elif FLAGS.optimizer == 'ftrl':
         optimizer = tf.train.FtrlOptimizer(learning_rate)
-
+    # 最终训练阶段的Operation
     train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
 
     # Provide an estimator spec for `ModeKeys.TRAIN` modes
+    # 定义训练阶段
     if mode == tf.estimator.ModeKeys.TRAIN:
         return tf.estimator.EstimatorSpec(
                 mode=mode,
@@ -234,8 +264,13 @@ def model_fn(features, labels, mode, params):
     #        eval_metric_ops=eval_metric_ops)
 
 def batch_norm_layer(x, train_phase, scope_bn):
-    bn_train = tf.contrib.layers.batch_norm(x, decay=FLAGS.batch_norm_decay, center=True, scale=True, updates_collections=None, is_training=True,  reuse=None, scope=scope_bn)
-    bn_infer = tf.contrib.layers.batch_norm(x, decay=FLAGS.batch_norm_decay, center=True, scale=True, updates_collections=None, is_training=False, reuse=True, scope=scope_bn)
+    bn_train = tf.contrib.layers.batch_norm(x, decay=FLAGS.batch_norm_decay, center=True,
+                                            scale=True, updates_collections=None,
+                                            is_training=True,  reuse=None, scope=scope_bn)
+    bn_infer = tf.contrib.layers.batch_norm(x, decay=FLAGS.batch_norm_decay,
+                                            center=True, scale=True,
+                                            updates_collections=None, is_training=False,
+                                            reuse=True, scope=scope_bn)
     z = tf.cond(tf.cast(train_phase, tf.bool), lambda: bn_train, lambda: bn_infer)
     return z
 
@@ -341,7 +376,7 @@ def main(_):
         "deep_layers": FLAGS.deep_layers,
         "dropout": FLAGS.dropout
     }
-    config = tf.estimator.RunConfig().replace(session_config = tf.ConfigProto(device_count={'GPU':0, 'CPU':FLAGS.num_threads}),
+    config = tf.estimator.RunConfig().replace(session_config=tf.ConfigProto(device_count={'GPU': 0, 'CPU': FLAGS.num_threads}),
             log_step_count_steps=FLAGS.log_steps, save_summary_steps=FLAGS.log_steps)
     DeepFM = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir, params=model_params, config=config)
 

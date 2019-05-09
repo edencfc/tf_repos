@@ -23,7 +23,7 @@ from multiprocessing import Pool as ThreadPool
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 LOG = tf.logging
-# 输入全局变量
+# 输入全局参数
 tf.app.flags.DEFINE_string("input_dir", "./", "input dir")
 tf.app.flags.DEFINE_string("output_dir", "./", "output dir")
 tf.app.flags.DEFINE_integer("threads", 16, "threads num")
