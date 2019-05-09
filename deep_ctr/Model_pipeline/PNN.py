@@ -108,8 +108,11 @@ def model_fn(features, labels, mode, params):
     l2_reg = params["l2_reg"]
     learning_rate = params["learning_rate"]
     #optimizer = params["optimizer"]
-    layers = map(int, params["deep_layers"].split(','))
-    dropout = map(float, params["dropout"].split(','))
+    """
+    升级代码版本至Python 3.X
+    """
+    layers = list(map(int, params["deep_layers"].split(',')))
+    dropout = list(map(float, params["dropout"].split(',')))
     num_pairs = field_size * (field_size - 1) / 2
 
     #------bulid weights------
@@ -136,35 +139,36 @@ def model_fn(features, labels, mode, params):
         embeddings = tf.multiply(embeddings, feat_vals) 				# None * F * K
 
     with tf.variable_scope("Product-layer"):
-		if FLAGS.model_type == 'FNN':
-			deep_inputs = tf.reshape(embeddings,shape=[-1,field_size*embedding_size])
-		elif FLAGS.model_type == 'Inner':
-			row = []
-			col = []
-			for i in range(field_size-1):
-				for j in range(i+1, field_size):
-					row.append(i)
-					col.append(j)
-			p = tf.gather(embeddings, row, axis=1)
-			q = tf.gather(embeddings, col, axis=1)
-	        #p = tf.reshape(p, [-1, num_pairs, embedding_size])
+        if FLAGS.model_type == 'FNN':
+            deep_inputs = tf.reshape(embeddings,shape=[-1,field_size*embedding_size])
+        elif FLAGS.model_type == 'Inner':
+            row = []
+            col = []
+            for i in range(field_size-1):
+                for j in range(i+1, field_size):
+                    row.append(i)
+                    col.append(j)
+            p = tf.gather(embeddings, row, axis=1)
+            q = tf.gather(embeddings, col, axis=1)
+            #p = tf.reshape(p, [-1, num_pairs, embedding_size])
             #q = tf.reshape(q, [-1, num_pairs, embedding_size])
-			inner = tf.reshape(tf.reduce_sum(p * q, [-1]), [-1, num_pairs])										# None * (F*(F-1)/2)
-			deep_inputs = tf.concat([tf.reshape(embeddings,shape=[-1,field_size*embedding_size]), inner], 1)	# None * ( F*K+F*(F-1)/2 )
-		elif FLAGS.model_type == 'Outer':             #ERROR: NOT ready yet
-			row = []
-			col = []
-			for i in range(field_size-1):
-				for j in range(i+1, field_size):
-					row.append(i)
-					col.append(j)
-			p = tf.gather(embeddings, row, axis=1)
-			q = tf.gather(embeddings, col, axis=1)
-	        #p = tf.reshape(p, [-1, num_pairs, embedding_size])
+            "升级代码至Tensorflow高版本"
+            inner = tf.reshape(tf.reduce_sum(p * q, [-1]), [-1, int(num_pairs)])										# None * (F*(F-1)/2)
+            deep_inputs = tf.concat([tf.reshape(embeddings,shape=[-1,field_size*embedding_size]), inner], 1)	# None * ( F*K+F*(F-1)/2 )
+        elif FLAGS.model_type == 'Outer':             #ERROR: NOT ready yet
+            row = []
+            col = []
+            for i in range(field_size-1):
+                for j in range(i+1, field_size):
+                    row.append(i)
+                    col.append(j)
+            p = tf.gather(embeddings, row, axis=1)
+            q = tf.gather(embeddings, col, axis=1)
+            #p = tf.reshape(p, [-1, num_pairs, embedding_size])
             #q = tf.reshape(q, [-1, num_pairs, embedding_size])
-			#einsum('i,j->ij', p, q)  # output[i,j] = p[i]*q[j]				# Outer product
-			outer = tf.reshape(tf.einsum('api,apj->apij', p, q), [-1, num_pairs*embedding_size*embedding_size])	# None * (F*(F-1)/2*K*K)
-			deep_inputs = tf.concat([tf.reshape(embeddings,shape=[-1,field_size*embedding_size]), outer], 1)	# None * ( F*K+F*(F-1)/2*K*K )
+            #einsum('i,j->ij', p, q)  # output[i,j] = p[i]*q[j]				# Outer product
+            outer = tf.reshape(tf.einsum('api,apj->apij', p, q), [-1, num_pairs*embedding_size*embedding_size])	# None * (F*(F-1)/2*K*K)
+            deep_inputs = tf.concat([tf.reshape(embeddings,shape=[-1,field_size*embedding_size]), outer], 1)	# None * ( F*K+F*(F-1)/2*K*K )
 
 
     with tf.variable_scope("Deep-part"):
@@ -178,10 +182,10 @@ def model_fn(features, labels, mode, params):
             	weights_regularizer=tf.contrib.layers.l2_regularizer(l2_reg), scope='mlp%d' % i)
 
             if FLAGS.batch_norm:
-				deep_inputs = batch_norm_layer(deep_inputs, train_phase=train_phase, scope_bn='bn_%d' %i)   	#放在RELU之后 https://github.com/ducha-aiki/caffenet-benchmark/blob/master/batchnorm.md#bn----before-or-after-relu
+                deep_inputs = batch_norm_layer(deep_inputs, train_phase=train_phase, scope_bn='bn_%d' %i)   	#放在RELU之后 https://github.com/ducha-aiki/caffenet-benchmark/blob/master/batchnorm.md#bn----before-or-after-relu
             if mode == tf.estimator.ModeKeys.TRAIN:
-				deep_inputs = tf.nn.dropout(deep_inputs, keep_prob=dropout[i])                              	#Apply Dropout after all BN layers and set dropout=0.8(drop_ratio=0.2)
-            	#deep_inputs = tf.layers.dropout(inputs=deep_inputs, rate=dropout[i], training=mode == tf.estimator.ModeKeys.TRAIN)
+                deep_inputs = tf.nn.dropout(deep_inputs, keep_prob=dropout[i])                              	#Apply Dropout after all BN layers and set dropout=0.8(drop_ratio=0.2)
+                #deep_inputs = tf.layers.dropout(inputs=deep_inputs, rate=dropout[i], training=mode == tf.estimator.ModeKeys.TRAIN)
 
         y_deep = tf.contrib.layers.fully_connected(inputs=deep_inputs, num_outputs=1, activation_fn=tf.identity, \
             weights_regularizer=tf.contrib.layers.l2_regularizer(l2_reg), scope='deep_out')
