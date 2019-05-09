@@ -100,8 +100,11 @@ def model_fn(features, labels, mode, params):
     l2_reg = params["l2_reg"]
     learning_rate = params["learning_rate"]
     #optimizer = params["optimizer"]
-    layers = map(int, params["deep_layers"].split(','))
-    dropout = map(float, params["dropout"].split(','))
+    """
+    升级代码版本至Python 3.X
+    """
+    layers = list(map(int, params["deep_layers"].split(',')))
+    dropout = list(map(float, params["dropout"].split(',')))
 
     #------bulid weights------
     Global_Bias = tf.get_variable(name='bias', shape=[1], initializer=tf.constant_initializer(0.0))
@@ -109,7 +112,7 @@ def model_fn(features, labels, mode, params):
     Feat_Emb = tf.get_variable(name='emb', shape=[feature_size,embedding_size], initializer=tf.glorot_normal_initializer())
 
     #------build feaure-------
-    feat_ids  = features['feat_ids']
+    feat_ids = features['feat_ids']
     feat_ids = tf.reshape(feat_ids,shape=[-1,field_size])
     feat_vals = features['feat_vals']
     feat_vals = tf.reshape(feat_vals,shape=[-1,field_size])
@@ -155,7 +158,7 @@ def model_fn(features, labels, mode, params):
         y = y_bias + y_linear + y_d
         pred = tf.sigmoid(y)
 
-    predictions={"prob": pred}
+    predictions = {"prob": pred}
     export_outputs = {tf.saved_model.signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY: tf.estimator.export.PredictOutput(predictions)}
     # Provide an estimator spec for `ModeKeys.PREDICT`
     if mode == tf.estimator.ModeKeys.PREDICT:
