@@ -108,9 +108,9 @@ def model_fn(features, labels, mode, params):
     learning_rate = params["learning_rate"]
     #batch_norm_decay = params["batch_norm_decay"]
     #optimizer = params["optimizer"]
-    layers = map(int, params["deep_layers"].split(','))
-    dropout = map(float, params["dropout"].split(','))
-    attention_layers = map(int, params["attention_layers"].split(','))
+    layers = list(map(int, params["deep_layers"].split(',')))
+    dropout = list(map(float, params["dropout"].split(',')))
+    attention_layers = list(map(int, params["attention_layers"].split(',')))
     common_dims = field_size*embedding_size
 
     #------bulid weights------
